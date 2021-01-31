@@ -27,12 +27,24 @@ fn main() {
 
     let target = PathBuf::from(args[1].as_str());
 
+    unshare_namespaces();
+    fork_and_supervise();
+    setup_mounts(&target);
+    setup_devices(&target);
+    enter_chroot(&target);
+}
+
+/// Unshare namespaces
+fn unshare_namespaces() {
     let flags = CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWPID
         | CloneFlags::CLONE_NEWIPC
         | CloneFlags::CLONE_NEWUTS;
     unshare(flags).expect("Unshare failed");
+}
 
+/// Fork and have parent supervise child
+fn fork_and_supervise() {
     match unsafe { fork().expect("Fork failed") } {
         ForkResult::Parent { .. } => {
             // Wait for child to exit
@@ -43,17 +55,24 @@ fn main() {
         },
         ForkResult::Child => (),
     }
+}
 
-    let root = PathBuf::from("/");
-    make_rslave(&root).expect("Failed to mark root rslave");
-    bind_mount(&target, &target).expect("Failed to bind-mount root");
+/// Setup filesystem mounts
+fn setup_mounts<T: AsRef<Path>>(target: T) {
+    let target = target.as_ref();
 
-    // Mounts
+    make_rslave("/").expect("Failed to mark root rslave");
+    bind_mount(target, target).expect("Failed to bind-mount root");
+
     mount_special(target.join("proc"), "proc", MsFlags::empty(), None).expect("Failed to mount proc");
     mount_special(target.join("sys"), "sysfs", MsFlags::empty(), None).expect("Failed to mount sysfs");
     mount_special(target.join("dev"), "tmpfs", MsFlags::MS_NOSUID | MsFlags::MS_STRICTATIME, Some("mode=755")).expect("Failed to mount dev tmpfs");
+}
 
-    // Devices
+/// Setup device nodes
+fn setup_devices<T: AsRef<Path>>(target: T) {
+    let target = target.as_ref();
+
     let dev_mode: Mode = Mode::S_IRUSR | Mode::S_IWUSR | Mode::S_IRGRP | Mode::S_IWGRP | Mode::S_IROTH | Mode::S_IWOTH;
     make_chardev(target.join("dev/null"), dev_mode, 1, 3).expect("Failed to make /dev/null");
     make_chardev(target.join("dev/zero"), dev_mode, 1, 5).expect("Failed to make /dev/zero");
@@ -67,10 +86,13 @@ fn main() {
     symlink("/proc/self/fd/0", target.join("dev/stdin")).expect("Failed to symlink /dev/stdin");
     symlink("/proc/self/fd/1", target.join("dev/stdout")).expect("Failed to symlink /dev/stdout");
     symlink("/proc/self/fd/2", target.join("dev/stderr")).expect("Failed to symlink /dev/stderr");
+}
 
-    // Enter chroot
-    chdir(&target).expect("Failed to chdir to target");
-    move_mount(".", root).expect("Failed to move root");
+fn enter_chroot<T: AsRef<Path>>(target: T) {
+    let target = target.as_ref();
+
+    chdir(target).expect("Failed to chdir to target");
+    move_mount(".", "/").expect("Failed to move root");
     chroot(".").expect("Failed to chroot to target");
 
     let shell = CString::new(DEFAULT_EXEC).unwrap();
