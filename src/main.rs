@@ -19,6 +19,7 @@ fn main() {
     let matches = App::new("Ch'oot")
         .about("Suped up chroot using namespaces")
         .version(crate_version!())
+        .arg(Arg::with_name("readonly").short("R").long("readonly").help("Mount filesystem readonly"))
         .arg(Arg::with_name("ROOT").required(true).index(1).help("Filesystem root"))
         .arg(Arg::with_name("ARG").multiple(true).last(true).help("Command arguments"))
         .get_matches();
@@ -35,7 +36,7 @@ fn main() {
 
     unshare_namespaces();
     fork_and_supervise();
-    setup_mounts(&target);
+    setup_mounts(&target, matches.is_present("readonly"));
     setup_devices(&target);
     enter_chroot(&target, &args);
 }
@@ -64,11 +65,15 @@ fn fork_and_supervise() {
 }
 
 /// Setup filesystem mounts
-fn setup_mounts<T: AsRef<Path>>(target: T) {
+fn setup_mounts<T: AsRef<Path>>(target: T, readonly: bool) {
     let target = target.as_ref();
 
     make_rslave("/").expect("Failed to mark root rslave");
     bind_mount(target, target).expect("Failed to bind-mount root");
+
+    if readonly {
+        remount_readonly(target).expect("Failed to remount readonly");
+    }
 
     mount_special(target.join("proc"), "proc", MsFlags::empty(), None).expect("Failed to mount proc");
     mount_special(target.join("sys"), "sysfs", MsFlags::empty(), None).expect("Failed to mount sysfs");
@@ -117,6 +122,10 @@ fn make_rslave<T: AsRef<Path>>(target: T) -> nix::Result<()> {
 
 fn bind_mount<T: AsRef<Path>, U: AsRef<Path>>(source: T, target: U) -> nix::Result<()> {
     mount(Some(source.as_ref()), target.as_ref(), None::<&Path>, MsFlags::MS_BIND, None::<&Path>)
+}
+
+fn remount_readonly<T: AsRef<Path>>(target: T) -> nix::Result<()> {
+    mount(Some(target.as_ref()), target.as_ref(), None::<&Path>, MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY, None::<&Path>)
 }
 
 fn mount_special<T: AsRef<Path>>(target: T, fstype: &str, flags: MsFlags, data: Option<&str>) -> nix::Result<()> {
