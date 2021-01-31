@@ -1,4 +1,3 @@
-use std::env::args;
 use std::ffi::CString;
 use std::process::exit;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,10 @@ use nix::sched::unshare;
 use nix::sched::CloneFlags;
 use nix::sys::wait::{wait, WaitStatus};
 use nix::sys::stat::{mknod, makedev, Mode, SFlag};
-use nix::unistd::{chdir, chroot, execv, fork, geteuid, symlinkat, ForkResult};
+use nix::unistd::{chdir, chroot, execve, fork, geteuid, symlinkat, ForkResult};
+
+const DEFAULT_EXEC: &str = "/bin/sh";
+const PATH: &str = "PATH=/usr/sbin:/usr/bin:/sbin:/bin";
 
 
 fn main() {
@@ -17,7 +19,7 @@ fn main() {
         exit(1);
     }
 
-    let args: Vec<String> = args().collect();
+    let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("usage: {} ROOT", args[0]);
         exit(2);
@@ -71,8 +73,14 @@ fn main() {
     move_mount(".", root).expect("Failed to move root");
     chroot(".").expect("Failed to chroot to target");
 
-    let shell = CString::new("/bin/sh").unwrap();
-    execv(&shell, &[&shell]).unwrap();
+    let shell = CString::new(DEFAULT_EXEC).unwrap();
+    let env = [
+        CString::new("HOME=/root").unwrap(),
+        CString::new(format!("SHELL={}", std::env::var("SHELL").unwrap_or_default())).unwrap(),
+        CString::new(PATH).unwrap(),
+        CString::new(format!("TERM={}", std::env::var("TERM").unwrap_or_default())).unwrap(),
+    ];
+    execve(&shell, &[&shell], &env).unwrap();
 }
 
 fn make_rslave<T: AsRef<Path>>(target: T) -> nix::Result<()> {
