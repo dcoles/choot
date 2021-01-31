@@ -16,17 +16,17 @@ const PATH: &str = "PATH=/usr/sbin:/usr/bin:/sbin:/bin";
 
 
 fn main() {
-    if !geteuid().is_root() {
-        eprintln!("Must be run as root");
-        exit(1);
-    }
-
     let matches = App::new("Ch'oot")
         .about("Suped up chroot using namespaces")
         .version(crate_version!())
         .arg(Arg::with_name("ROOT").required(true).index(1).help("Filesystem root"))
         .arg(Arg::with_name("ARG").multiple(true).last(true).help("Command arguments"))
         .get_matches();
+
+    if !geteuid().is_root() {
+        eprintln!("Must be run as root");
+        exit(1);
+    }
 
     let target = PathBuf::from(matches.value_of("ROOT").unwrap());
     let args: Vec<CString> = matches.values_of("ARG")
