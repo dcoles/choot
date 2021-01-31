@@ -2,6 +2,8 @@ use std::ffi::CString;
 use std::process::exit;
 use std::path::{Path, PathBuf};
 
+use clap::{App, Arg, crate_version};
+
 use nix::mount::{mount, MsFlags};
 use nix::sched::unshare;
 use nix::sched::CloneFlags;
@@ -19,13 +21,15 @@ fn main() {
         exit(1);
     }
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("usage: {} ROOT", args[0]);
-        exit(2);
-    }
+    let matches = App::new("Ch'oot")
+        .about("Suped up chroot using namespaces")
+        .version(crate_version!())
+        .arg(Arg::with_name("ROOT")
+            .required(true)
+            .index(1))
+        .get_matches();
 
-    let target = PathBuf::from(args[1].as_str());
+    let target = PathBuf::from(matches.value_of("ROOT").unwrap());
 
     unshare_namespaces();
     fork_and_supervise();
