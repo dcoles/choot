@@ -7,7 +7,16 @@ A suped up chroot using Linux namespaces.
 ## Usage
 
 ```
-Usage: choot TARGET
+USAGE:
+    choot <ROOT> [-- <ARG>...]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+ARGS:
+    <ROOT>      Filesystem root
+    <ARG>...    Command arguments
 ```
 
 ## License

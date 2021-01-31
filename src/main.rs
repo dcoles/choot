@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use std::process::exit;
 use std::path::{Path, PathBuf};
 
@@ -24,18 +24,20 @@ fn main() {
     let matches = App::new("Ch'oot")
         .about("Suped up chroot using namespaces")
         .version(crate_version!())
-        .arg(Arg::with_name("ROOT")
-            .required(true)
-            .index(1))
+        .arg(Arg::with_name("ROOT").required(true).index(1).help("Filesystem root"))
+        .arg(Arg::with_name("ARG").multiple(true).last(true).help("Command arguments"))
         .get_matches();
 
     let target = PathBuf::from(matches.value_of("ROOT").unwrap());
+    let args: Vec<CString> = matches.values_of("ARG")
+        .map(|args| args.map(|arg| CString::new(arg).unwrap()).collect::<Vec<_>>())
+        .unwrap_or_else(|| vec![CString::new(DEFAULT_EXEC).unwrap()]);
 
     unshare_namespaces();
     fork_and_supervise();
     setup_mounts(&target);
     setup_devices(&target);
-    enter_chroot(&target);
+    enter_chroot(&target, &args);
 }
 
 /// Unshare namespaces
@@ -92,21 +94,21 @@ fn setup_devices<T: AsRef<Path>>(target: T) {
     symlink("/proc/self/fd/2", target.join("dev/stderr")).expect("Failed to symlink /dev/stderr");
 }
 
-fn enter_chroot<T: AsRef<Path>>(target: T) {
+fn enter_chroot<T: AsRef<Path>, U: AsRef<CStr>>(target: T, args: &[U]) {
     let target = target.as_ref();
+    let args: Vec<_> = args.into_iter().map(AsRef::as_ref).collect();
 
     chdir(target).expect("Failed to chdir to target");
     move_mount(".", "/").expect("Failed to move root");
     chroot(".").expect("Failed to chroot to target");
 
-    let shell = CString::new(DEFAULT_EXEC).unwrap();
     let env = [
         CString::new("HOME=/root").unwrap(),
         CString::new(format!("SHELL={}", std::env::var("SHELL").unwrap_or_default())).unwrap(),
         CString::new(PATH).unwrap(),
         CString::new(format!("TERM={}", std::env::var("TERM").unwrap_or_default())).unwrap(),
     ];
-    execve(&shell, &[&shell], &env).unwrap();
+    execve(args[0], &args, &env).unwrap();
 }
 
 fn make_rslave<T: AsRef<Path>>(target: T) -> nix::Result<()> {
