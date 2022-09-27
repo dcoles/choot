@@ -19,7 +19,7 @@ fn main() {
     let matches = App::new("Ch'oot")
         .about("Suped up chroot using namespaces")
         .version(crate_version!())
-        .arg(Arg::with_name("readonly").short("R").long("readonly").help("Mount filesystem readonly"))
+        .arg(Arg::with_name("readonly").short('R').long("readonly").help("Mount filesystem readonly"))
         .arg(Arg::with_name("ROOT").required(true).index(1).help("Filesystem root"))
         .arg(Arg::with_name("ARG").multiple(true).last(true).help("Command arguments"))
         .get_matches();
