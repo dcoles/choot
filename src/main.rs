@@ -2,7 +2,7 @@ use std::ffi::{CString, CStr};
 use std::process::exit;
 use std::path::{Path, PathBuf};
 
-use clap::{App, Arg, crate_version};
+use clap::Parser;
 
 use nix::mount::{mount, MsFlags};
 use nix::sched::unshare;
@@ -14,29 +14,37 @@ use nix::unistd::{chdir, chroot, execve, fork, geteuid, symlinkat, ForkResult};
 const DEFAULT_EXEC: &str = "/bin/sh";
 const PATH: &str = "PATH=/usr/sbin:/usr/bin:/sbin:/bin";
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, help = "Mount filesystem readonly")]
+    readonly: bool,
+
+    #[arg(index = 1, required = true, help = "Mount filesystem readonly")]
+    root: PathBuf,
+
+    #[arg(index = 2, last = true, help = "Command arguments")]
+    args: Vec<String>,
+}
 
 fn main() {
-    let matches = App::new("Ch'oot")
-        .about("Suped up chroot using namespaces")
-        .version(crate_version!())
-        .arg(Arg::with_name("readonly").short('R').long("readonly").help("Mount filesystem readonly"))
-        .arg(Arg::with_name("ROOT").required(true).index(1).help("Filesystem root"))
-        .arg(Arg::with_name("ARG").multiple(true).last(true).help("Command arguments"))
-        .get_matches();
+    let matches = Args::parse();
 
     if !geteuid().is_root() {
         eprintln!("Must be run as root");
         exit(1);
     }
 
-    let target = PathBuf::from(matches.value_of("ROOT").unwrap());
-    let args: Vec<CString> = matches.values_of("ARG")
-        .map(|args| args.map(|arg| CString::new(arg).unwrap()).collect::<Vec<_>>())
-        .unwrap_or_else(|| vec![CString::new(DEFAULT_EXEC).unwrap()]);
+    let target = matches.root;
+    let args: Vec<CString> = if !matches.args.is_empty() {
+        matches.args.into_iter().map(|arg| CString::new(arg).unwrap()).collect::<Vec<_>>()
+    } else {
+        vec![CString::new(DEFAULT_EXEC).unwrap()]
+    };
 
     unshare_namespaces();
     fork_and_supervise();
-    setup_mounts(&target, matches.is_present("readonly"));
+    setup_mounts(&target, matches.readonly);
     setup_devices(&target);
     enter_chroot(&target, &args);
 }
